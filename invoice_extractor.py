@@ -3,10 +3,16 @@ import requests
 import pdfplumber
 import re
 import time  # 如需使用 sleep，请使用 time.sleep()
+import config_loader
 
 # ================= 配置区域 =================
-# 🔴 你的 API Key (已保留你刚才提供的)
-API_KEY = "sk-cb441e489cd84dc8906e37733ed9181e" 
+# 从配置文件加载 API Key
+try:
+    API_KEY = config_loader.get_api_key()
+except (FileNotFoundError, ValueError) as e:
+    print(f"❌ API Key 配置加载失败: {e}")
+    print("请确保已创建 config.ini 文件并填写正确的 API Key。")
+    API_KEY = ""  # 设置为空字符串，后续调用会失败并提示
 # ===========================================
 
 def extract_invoice_data(pdf_path):

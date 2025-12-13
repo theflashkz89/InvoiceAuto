@@ -10,14 +10,17 @@ from datetime import datetime
 import time
 import invoice_extractor
 import EmailHandler
+import config_loader
 
 
 # ================= 配置区域 =================
-# QQ 邮箱账号（请替换为你的实际邮箱）
-MAIL_USER = "freightforceone@qq.com"
-
-# QQ 邮箱授权码（请替换为你的实际授权码，不是登录密码）
-MAIL_PASS = "wehhokderyvncbbf"
+# 从配置文件加载邮箱信息
+try:
+    MAIL_USER, MAIL_PASS = config_loader.get_email_config()
+except (FileNotFoundError, ValueError) as e:
+    print(f"❌ 配置加载失败: {e}")
+    print("请确保已创建 config.ini 文件并填写正确的配置信息。")
+    exit(1)
 
 # 根目录（当前工作目录）
 BASE_DIR = os.getcwd()

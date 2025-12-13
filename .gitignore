@@ -42,7 +42,7 @@ wheels/
 Download/
 *.log
 
-# 敏感信息（如果使用配置文件）
+# 敏感信息（配置文件）
 config.ini
 .env
 secrets.json

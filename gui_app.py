@@ -16,11 +16,24 @@ import traceback
 # 导入项目模块
 import invoice_extractor
 import EmailHandler
+import config_loader
 
-# ================= 硬编码配置区域（不显示在界面）=================
-MAIL_USER = "freightforceone@qq.com"
-MAIL_PASS = "wehhokderyvncbbf"
-API_KEY = "sk-cb441e489cd84dc8906e37733ed9181e"
+# ================= 配置区域 =================
+# 从配置文件加载配置信息
+try:
+    MAIL_USER, MAIL_PASS = config_loader.get_email_config()
+    API_KEY = config_loader.get_api_key()
+except (FileNotFoundError, ValueError) as e:
+    # 如果配置加载失败，显示错误并退出
+    import tkinter.messagebox as msgbox
+    root = tk.Tk()
+    root.withdraw()  # 隐藏主窗口
+    msgbox.showerror("配置错误", 
+                     f"配置文件加载失败:\n{e}\n\n"
+                     f"请确保已创建 config.ini 文件并填写正确的配置信息。\n"
+                     f"可以参考 config.example.ini 文件。")
+    root.destroy()
+    sys.exit(1)
 # ================================================================
 
 
