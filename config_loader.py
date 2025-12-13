@@ -4,6 +4,7 @@
 """
 
 import os
+import sys
 import configparser
 from pathlib import Path
 
@@ -19,7 +20,16 @@ def load_config():
         如果配置文件不存在，会抛出 FileNotFoundError
     """
     config = configparser.ConfigParser()
-    config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
+    
+    # 判断是否为打包后的 EXE 环境
+    if getattr(sys, 'frozen', False):
+        # EXE 环境：使用 EXE 文件所在的目录
+        base_path = os.path.dirname(sys.executable)
+    else:
+        # 普通 Python 脚本运行：使用脚本文件所在的目录
+        base_path = os.path.dirname(__file__)
+    
+    config_file = os.path.join(base_path, 'config.ini')
     
     if not os.path.exists(config_file):
         raise FileNotFoundError(
