@@ -19,6 +19,9 @@ InvoiceAuto/
 ├── EmailHandler.py        # 邮件处理模块
 ├── invoice_extractor.py   # 发票数据提取模块
 ├── PDFClassifier.py       # PDF 文件分类模块
+├── config_loader.py       # 配置加载模块
+├── config.example.ini     # 配置文件模板
+├── config.ini            # 配置文件（需自行创建，不提交到 Git）
 ├── requirements.txt       # 项目依赖
 └── README.md             # 项目说明文档
 ```
@@ -38,13 +41,17 @@ pip install -r requirements.txt
 
 ### 3. 配置
 
-在 `main.py` 或 `gui_app.py` 中配置以下信息：
+1. 复制配置文件模板：
+   ```bash
+   copy config.example.ini config.ini
+   ```
 
-- **邮箱账号**：QQ 邮箱地址
-- **邮箱授权码**：QQ 邮箱授权码（不是登录密码）
-- **API Key**：DeepSeek API 密钥
+2. 编辑 `config.ini` 文件，填写你的配置信息：
+   - **邮箱账号**：QQ 邮箱地址
+   - **邮箱授权码**：QQ 邮箱授权码（不是登录密码）
+   - **API Key**：DeepSeek API 密钥
 
-⚠️ **注意**：建议将敏感信息移至配置文件或环境变量，不要直接硬编码在代码中。
+⚠️ **重要**：`config.ini` 文件包含敏感信息，不会被提交到 Git。请妥善保管此文件。
 
 ## 使用方法
 
