@@ -69,6 +69,77 @@ def sanitize_filename(filename):
     return filename
 
 
+def shorten_path(path, max_length=60):
+    """
+    截断路径显示，如果路径过长则保留前15个字符和后30个字符，中间用"..."代替
+    
+    参数:
+        path (str): 原始路径
+        max_length (int): 最大显示长度，默认60
+        
+    返回:
+        str: 截断后的路径或原路径
+    """
+    if len(path) <= max_length:
+        return path
+    
+    # 保留前15个字符和后30个字符
+    front = path[:15]
+    back = path[-30:]
+    return f"{front}...{back}"
+
+
+class Tooltip:
+    """简单的 Tooltip 类，用于在鼠标悬停时显示提示信息"""
+    
+    def __init__(self, widget, text):
+        """
+        初始化 Tooltip
+        
+        参数:
+            widget: 要添加 Tooltip 的组件
+            text (str): 要显示的提示文本
+        """
+        self.widget = widget
+        self.text = text
+        self.tooltip_window = None
+        self.widget.bind("<Enter>", self.on_enter)
+        self.widget.bind("<Leave>", self.on_leave)
+        self.widget.bind("<Motion>", self.on_motion)
+    
+    def on_enter(self, event=None):
+        """鼠标进入时显示 Tooltip"""
+        self.show_tooltip(event)
+    
+    def on_motion(self, event=None):
+        """鼠标移动时更新 Tooltip 位置"""
+        if self.tooltip_window:
+            self.show_tooltip(event)
+    
+    def show_tooltip(self, event):
+        """显示 Tooltip"""
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+        
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        
+        self.tooltip_window = tk.Toplevel(self.widget)
+        self.tooltip_window.wm_overrideredirect(True)
+        self.tooltip_window.wm_geometry(f"+{x}+{y}")
+        
+        label = tk.Label(self.tooltip_window, text=self.text, 
+                        background="#ffffe0", relief=tk.SOLID, borderwidth=1,
+                        font=("Microsoft YaHei", 9), wraplength=400, justify=tk.LEFT)
+        label.pack()
+    
+    def on_leave(self, event=None):
+        """鼠标离开时隐藏 Tooltip"""
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
+
+
 def run_main_process(base_dir, log_output, booking_list_path=None, price_list_path=None):
     """
     主处理函数：执行完整的邮件处理流程（在独立线程中运行）
@@ -271,7 +342,7 @@ def run_main_process(base_dir, log_output, booking_list_path=None, price_list_pa
         
         if all_excel_data:
             headers = [
-                "NO", "File Name", "FILENO", "DATE", "Carrier",
+                "NO", "File Name", "FILENO", "File No", "DATE", "Carrier", "Vessel/Voyage",
                 "Loading Port", "Loading Port Code", "Destination", "Destination Code",
                 "ETD", "ETA", "Receipt", "OBL", "HBL", "MBL",
                 "Item", "Quantity", "Unit Price", "Container Type", "Amount", "Booking No"
@@ -348,7 +419,6 @@ def run_main_process(base_dir, log_output, booking_list_path=None, price_list_pa
                     print("✓ 自动查价完成！结果已更新至 info.xlsx")
                 except Exception as e:
                     print(f"⚠ 警告：查价失败: {e}")
-                    import traceback
                     traceback.print_exc()
         
         # ==================== 步骤 5：清理环境 ====================
@@ -411,9 +481,14 @@ class InvoiceAutoGUI:
         
         tk.Label(path_frame, text="当前保存位置：", font=("Microsoft YaHei", 10)).pack(side=tk.LEFT)
         
-        self.path_label = tk.Label(path_frame, text=self.save_dir, font=("Microsoft YaHei", 9), 
+        # 使用截断后的路径显示
+        display_path = shorten_path(self.save_dir)
+        self.path_label = tk.Label(path_frame, text=display_path, font=("Microsoft YaHei", 9), 
                                    fg="blue", anchor="w")
         self.path_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        
+        # 添加 Tooltip 显示完整路径
+        self.path_tooltip = Tooltip(self.path_label, self.save_dir)
         
         browse_btn = tk.Button(path_frame, text="浏览文件夹", command=self.browse_folder,
                               font=("Microsoft YaHei", 10), bg="#4CAF50", fg="white", 
@@ -484,7 +559,11 @@ class InvoiceAutoGUI:
         folder = filedialog.askdirectory(initialdir=self.save_dir, title="选择保存文件夹")
         if folder:
             self.save_dir = folder
-            self.path_label.config(text=self.save_dir)
+            # 使用截断后的路径显示
+            display_path = shorten_path(self.save_dir)
+            self.path_label.config(text=display_path)
+            # 更新 Tooltip 的完整路径
+            self.path_tooltip.text = self.save_dir
             print(f"已选择保存位置: {self.save_dir}")
     
     def select_booking_list(self):

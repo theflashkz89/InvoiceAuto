@@ -337,12 +337,12 @@ def extract_invoice_data(pdf_path):
     
     【表头通用信息】(每行都要带上):
     - InvoiceNo: (提取 "INVOICE NO" 标题后的编号，通常以 'S' 开头，例如 S2511SED...)
-    - OriginalFileNo: (提取 "FILE NO." 后的编号)
+    - OriginalFileNo: (精确提取 "FILE NO." 后面的完整编号，例如：SRSE202508-00631，注意提取完整内容包含所有字符和连字符)
     - DATE: (提取 "DATE" 后的日期，格式 YYYY/MM/DD)
     - Carrier: (提取 "Carrier" 后的内容)
     - loadingport: (提取 "Loading port" 后的港口)
     - Destination: (提取 "Destination" 或 "Discharge port" 后的港口)
-    - Vessel: (提取 "Vessel" 后的船名)
+    - Vessel_Voyage: (提取 "Vessel" 或 "Vessel / Voyage" 后的完整内容，包含船名和航次，例如："MSC JESSENIA R V. HN531A"，请确保提取完整的字符串)
     - ETD: (提取 "ETD" 后的日期，格式 YYYY/MM/DD)
     - ETADate: (提取 "ETA Date" 后的日期，格式 YYYY/MM/DD)
     - OBL: (提取 "OBL" 后的单号)
@@ -427,44 +427,50 @@ def prepare_excel_row(invoice_data, file_path, booking_no):
     loading_port_code = get_port_code(loading_port)
     dest_port_code = get_port_code(destination)
 
-    # 组装列表 (严格对应 Sheet1 的 A, B, C... 列顺序)
+    # 组装列表 (严格对应 main.py 中 headers 列表的顺序，确保一一对应)
     # FILENO 列优先使用 InvoiceNo，如果为空则使用 OriginalFileNo
     fileno_value = clean(invoice_data.get("InvoiceNo")) or clean(invoice_data.get("OriginalFileNo"))
     
+    # 从 invoice_data 中获取 OriginalFileNo 和 Vessel_Voyage 的值
+    original_file_no = clean(invoice_data.get("OriginalFileNo"))
+    vessel_voyage = clean(invoice_data.get("Vessel_Voyage"))
+    
     row = [
-        "2",                                    # A列: NO (固定)
-        file_path,                              # B列: File Name
-        fileno_value,                           # C列: FILENO (优先 InvoiceNo，否则 OriginalFileNo)
-        clean(invoice_data.get("DATE")),        # D列: DATE
+        "2",                                    # 1. NO (固定值)
+        file_path,                              # 2. File Name
+        fileno_value,                           # 3. FILENO (优先 InvoiceNo，否则 OriginalFileNo)
+        original_file_no,                       # 4. File No (从 OriginalFileNo 字段获取)
+        clean(invoice_data.get("DATE")),        # 5. DATE
         
-        # --- 船公司 (只填一次) ---
-        clean(invoice_data.get("Carrier")),     # E列: Carrier
+        # --- 船公司信息 ---
+        clean(invoice_data.get("Carrier")),     # 6. Carrier
+        vessel_voyage,                          # 7. Vessel/Voyage (从 Vessel_Voyage 字段获取)
         
         # --- 装货港 (名称 + 代码) ---
-        clean(invoice_data.get("loadingport")), # F列: Loading Port
-        loading_port_code,                      # G列: Loading Port Code (自动匹配)
+        clean(invoice_data.get("loadingport")), # 8. Loading Port
+        loading_port_code,                      # 9. Loading Port Code (自动匹配)
         
         # --- 目的港 (名称 + 代码) ---
-        clean(invoice_data.get("Destination")), # H列: Destination
-        dest_port_code,                         # I列: Destination Code (自动匹配)
+        clean(invoice_data.get("Destination")), # 10. Destination
+        dest_port_code,                         # 11. Destination Code (自动匹配)
         
         # --- 时间与单号 ---
-        clean(invoice_data.get("ETD")),         # J列: ETD
-        clean(invoice_data.get("ETADate")),     # K列: ETA
-        clean(invoice_data.get("Receipt")),     # L列: Receipt
-        clean(invoice_data.get("OBL")),         # M列: OBL
-        clean(invoice_data.get("HBL")),         # N列: HBL
-        clean(invoice_data.get("MBL")),         # O列: MBL (预留位置)
+        clean(invoice_data.get("ETD")),         # 12. ETD
+        clean(invoice_data.get("ETADate")),     # 13. ETA
+        clean(invoice_data.get("Receipt")),     # 14. Receipt
+        clean(invoice_data.get("OBL")),         # 15. OBL
+        clean(invoice_data.get("HBL")),         # 16. HBL
+        clean(invoice_data.get("MBL")),         # 17. MBL (预留位置)
         
         # --- 费用明细 ---
-        clean(invoice_data.get("OCEANFREIGHT")),# P列: Item/Description
-        clean(invoice_data.get("XUSD")),        # Q列: Quantity
-        clean(invoice_data.get("Unit_Price")),  # R列: Unit Price
-        clean(invoice_data.get("Container_Type")),# S列: Container Type
-        clean(invoice_data.get("USD")),         # T列: Amount
+        clean(invoice_data.get("OCEANFREIGHT")),# 18. Item
+        clean(invoice_data.get("XUSD")),        # 19. Quantity
+        clean(invoice_data.get("Unit_Price")),  # 20. Unit Price
+        clean(invoice_data.get("Container_Type")),# 21. Container Type
+        clean(invoice_data.get("USD")),         # 22. Amount
         
         # --- 邮件提取 ---
-        booking_no                              # U列: Booking No (自动填入)
+        booking_no                              # 23. Booking No (从邮件中提取)
     ]
     
     return row

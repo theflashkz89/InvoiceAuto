@@ -261,7 +261,7 @@ def main():
         if all_excel_data:
             # 定义表头（严格按照要求的顺序）
             headers = [
-                "NO", "File Name", "FILENO", "DATE", "Carrier",
+                "NO", "File Name", "FILENO", "File No", "DATE", "Carrier", "Vessel/Voyage",
                 "Loading Port", "Loading Port Code", "Destination", "Destination Code",
                 "ETD", "ETA", "Receipt", "OBL", "HBL", "MBL",
                 "Item", "Quantity", "Unit Price", "Container Type", "Amount", "Booking No"
