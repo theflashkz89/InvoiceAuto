@@ -3,7 +3,8 @@ import requests
 import pdfplumber
 import re
 import time  # 如需使用 sleep，请使用 time.sleep()
-import difflib
+import os
+import sys
 import config_loader
 
 # ================= 配置区域 =================
@@ -11,292 +12,98 @@ import config_loader
 try:
     API_KEY = config_loader.get_api_key()
 except (FileNotFoundError, ValueError) as e:
-    print(f"❌ API Key 配置加载失败: {e}")
+    print(f"[错误] API Key 配置加载失败: {e}")
     print("请确保已创建 config.ini 文件并填写正确的 API Key。")
     API_KEY = ""  # 设置为空字符串，后续调用会失败并提示
 # ===========================================
 
-# ================= 港口代码字典 =================
-PORT_CODES = {
-    # 中国大陆主要港口
-    'SHANGHAI': 'CNSHG',
-    'NINGBO': 'CNNGB',
-    'SHENZHEN': 'CNSZX',
-    'GUANGZHOU': 'CNCAN',
-    'QINGDAO': 'CNTAO',
-    'TIANJIN': 'CNTXG',
-    'DALIAN': 'CNDLC',
-    'XIAMEN': 'CNXMN',
-    'YANTIAN': 'CNYTN',
-    'SHEKOU': 'CNSHK',
-    'CHIWAN': 'CNCWN',
-    'FOSHAN': 'CNFOS',
-    'ZHONGSHAN': 'CNZSN',
-    'ZHUHAI': 'CNZUH',
-    'BEIJING': 'CNBJO',
-    'NANJING': 'CNNJG',
-    'WUHAN': 'CNWUH',
-    'CHONGQING': 'CNCKG',
-    'FOS': 'CNFOS',
-    'ANQING': 'CNAQG',
-    'CHANGSHA': 'CNCSX',
-    'CHANGGU': 'CNCGU',
-    'FANGCHENG': 'CNFAN',
-    'FUZHOU': 'CNFOC',
-    'GONGZHULING': 'CNGON',
-    'HUADU': 'CNHUA',
-    'JIANGMEN': 'CNJMN',
-    'JINGZHOU': 'CNJGZ',
-    'JIUJIANG': 'CNJIU',
-    'LIANYUNGANG': 'CNLYG',
-    'KUNSHAN': 'CNKHN',
-    'NANSHA': 'CNNSA',
-    'NANTONG': 'CNNTG',
-    'QUANZHOU': 'CNQZH',
-    'SHANWEI': 'CNSWA',
-    'SUDONG': 'CNSUD',
-    'TAICANG': 'CNTAG',
-    'TAIZHOU': 'CNTZO',
-    'WEIHAI': 'CNWEI',
-    'WENZHOU': 'CNWNZ',
-    'WUHU': 'CNWHI',
-    'XIGANG': 'CNXIG',
-    'YANGZHOU': 'CNYZH',
-    'YICHANG': 'CNYIC',
-    'YUYUAN': 'CNYUY',
-    'ZHANGJIAGANG': 'CNZJG',
-    'ZHAOQING': 'CNZHA',
-    'ZHEJIANG': 'CNZHE',
-    'TANGSHAN': 'CNTSG',
-    'LUZHOU': 'CNLUZ',
-    'RIZHAO': 'CNROQ',
-    'SANJIAO': 'CNSJQ',
-    'XILING': 'CNXIL',
-    'YANTING': 'CNYTG',
-    'ZHUQING': 'CNZQG',
-    'DONGCUOBA': 'CNDCB',
-    'LANZHOU': 'CNLAN',
+# ================= 港口代码缓存 =================
+# 全局变量：缓存加载的港口代码字典，避免重复加载
+_PORT_CODES_CACHE = None
+# ===========================================
+
+# ================= 港口代码加载函数 =================
+def load_port_codes():
+    """
+    功能：从 port_codes.json 文件加载港口代码字典（带缓存）
     
-    # 香港、澳门、台湾
-    'HONGKONG': 'HKHKG',
-    'MACAU': 'MOMFM',
-    'MACAO': 'MOMFM',
-    'TAIPEI': 'TWTPE',
-    'KAOHSIUNG': 'TWKHH',
-    'KEELUNG': 'TWKEL',
-    'TAICHUNG': 'TWTXG',
-    'TAOYUAN': 'TWTYN',
+    返回：
+        dict: 港口名称（大写）-> 5位代码 的字典
+        如果文件不存在或读取失败，返回空字典并记录错误日志
+    """
+    global _PORT_CODES_CACHE
     
-    # 美国主要港口
-    'LOSANGELES': 'USLAX',
-    'LONGBEACH': 'USLGB',
-    'NEWYORK': 'USNYC',
-    'NEWARK': 'USEWR',
-    'SAVANNAH': 'USSAV',
-    'CHARLESTON': 'USCHS',
-    'HOUSTON': 'USHOU',
-    'MIAMI': 'USMIA',
-    'SEATTLE': 'USSEA',
-    'TACOMA': 'USTIW',
-    'OAKLAND': 'USOAK',
-    'NORFOLK': 'USORF',
-    'BALTIMORE': 'USBWI',
-    'BOSTON': 'USBOS',
-    'PHILADELPHIA': 'USPHL',
-    'CHICAGO': 'USCHI',
-    'DETROIT': 'USDET',
-    'PORTLAND': 'USPDX',
+    # 如果已经加载过，直接返回缓存
+    if _PORT_CODES_CACHE is not None:
+        return _PORT_CODES_CACHE
     
-    # 欧洲主要港口
-    'ROTTERDAM': 'NLRTM',
-    'AMSTERDAM': 'NLAMS',
-    'ANTWERP': 'BEANR',
-    'HAMBURG': 'DEHAM',
-    'BREMEN': 'DEBRE',
-    'FELIXSTOWE': 'GBFXT',
-    'LONDON': 'GBLON',
-    'SOUTHAMPTON': 'GBSOU',
-    'LEHAVRE': 'FRLEH',
-    'MARSEILLE': 'FRMRS',
-    'FOSSURMER': 'FRFOS',
-    'BARCELONA': 'ESBCN',
-    'VALENCIA': 'ESVLC',
-    'ALGECIRAS': 'ESALG',
-    'GENOA': 'ITGOA',
-    'LASPEZIA': 'ITSPE',
-    'NAPLES': 'ITNAP',
-    'GIOIATAURO': 'ITGIT',
-    'PIRAEUS': 'GRPIR',
-    'THESSALONIKI': 'GRSKG',
-    'GOTHENBURG': 'SEGOT',
-    'STOCKHOLM': 'SESTO',
-    'GDANSK': 'PLGDN',
-    'GDYNIA': 'PLGDY',
-    'DUNKIRK': 'FRDKK',
-    'WILHELMSHAVEN': 'DEWVN',
-    'ZEEBRUGGE': 'BEZEE',
-    'BREMERHAVEN': 'DEBRV',
-    'GATEWAY': 'GBLGP',
-    'IMMINGHAM': 'GBIMM',
-    'BELFAST': 'GBBEL',
-    'COPENHAGEN': 'DKCPH',
-    'AARHUS': 'DKAAR',
-    'OSLO': 'NOOSL',
-    'DUBLIN': 'IEDUB',
-    'CORK': 'IECORK',
-    'LISBON': 'PTLIS',
-    'OPORTO': 'PTOPO',
-    
-    # 东南亚主要港口
-    'SINGAPORE': 'SGSIN',
-    'KELANG': 'MYPKG',
-    'PENANG': 'MYPEN',
-    'PASIRGUDANG': 'MYPGU',
-    'BANGKOK': 'THBKK',
-    'LAEMCHABANG': 'THLCH',
-    'LAEMKRABANG': 'THLKR',
-    'SONGKHLA': 'THSGZ',
-    'HOCHIMINH': 'VNSGN',
-    'HAIPHONG': 'VNHPH',
-    'DANANG': 'VNDAD',
-    'QUYNHON': 'VNUIH',
-    'VUNGTAU': 'VNVUT',
-    'CAMRANH': 'VNCMT',
-    'MANILA': 'PHMNL',
-    'CEBU': 'PHCEB',
-    'CAGAYAN': 'PHCGY',
-    'GENERALSANTOS': 'PHGES',
-    'JAKARTA': 'IDJKT',
-    'PANJANG': 'IDPNJ',
-    'SURABAYA': 'IDSUB',
-    'BELAWAN': 'IDBLW',
-    'SEMARANG': 'IDSRG',
-    'BATAM': 'IDBTH',
-    'YANGON': 'MMRGN',
-    'PHNOMPENH': 'KHPNH',
-    'SIHANOUKVILLE': 'KHSCH',
-    
-    # 日韩主要港口
-    'TOKYO': 'JPTYO',
-    'YOKOHAMA': 'JPYOK',
-    'OSAKA': 'JPOSA',
-    'KOBE': 'JPUKB',
-    'NAGOYA': 'JPNGO',
-    'BUSAN': 'KRPUS',
-    'INCHEON': 'KRINC',
-    'ULSAN': 'KRUSN',
-    'GWANGYANG': 'KRKAN',
-    
-    # 中东主要港口
-    'DUBAI': 'AEDXB',
-    'JEBELALI': 'AEJEA',
-    'ABUDHABI': 'AEAUH',
-    'DAMMAM': 'SADMM',
-    'JEDDAH': 'SAJED',
-    'RIYADH': 'SARUH',
-    'KUWAIT': 'KWKWI',
-    'DOHA': 'QADOH',
-    'BAHRAIN': 'BHBAH',
-    'MUSCAT': 'OMMCT',
-    'BANDARABBAS': 'IRBND',
-    'ASHDOD': 'ILASH',
-    'HAIFA': 'ILHFA',
-    
-    # 南亚主要港口
-    'MUMBAI': 'INBOM',
-    'NEWDELHI': 'INNDE',
-    'CHENNAI': 'INMAA',
-    'KOLKATA': 'INCCU',
-    'COCHIN': 'INCOK',
-    'VISAKHAPATNAM': 'INVTZ',
-    'KARACHI': 'PKKHI',
-    'LAHORE': 'PKLHE',
-    'COLOMBO': 'LKCMB',
-    'CHITTAGONG': 'BDCGP',
-    'DHAKA': 'BDDAC',
-    
-    # 澳洲主要港口
-    'SYDNEY': 'AUSYD',
-    'MELBOURNE': 'AUMEL',
-    'BRISBANE': 'AUBNE',
-    'FREMANTLE': 'AUFRE',
-    'ADELAIDE': 'AUADL',
-    'AUCKLAND': 'NZAKL',
-    'WELLINGTON': 'NZWLG',
-    'LYTTELTON': 'NZLYT',
-    
-    # 南美主要港口
-    'SANTOS': 'BRSSZ',
-    'RIODEJANEIRO': 'BRRIO',
-    'BUENOSAIRES': 'ARBUE',
-    'VALPARAISO': 'CLVAP',
-    'CALLAO': 'PECLL',
-    'CARTAGENA': 'COCTG',
-    'MANZANILLO': 'MXZLO',
-    'VERACRUZ': 'MXVER',
-    
-    # 非洲主要港口
-    'DURBAN': 'ZADUR',
-    'CAPETOWN': 'ZACPT',
-    'ELIZABETH': 'ZAPLZ',
-    'CASABLANCA': 'MACAS',
-    'ALEXANDRIA': 'EGALY',
-    'SAID': 'EGPSD',
-    'LAGOS': 'NGLOS',
-    'MOMBASA': 'KEMBA',
-    'DARESSALAAM': 'TZDAR',
-    
-    # 其他重要港口
-    'VANCOUVER': 'CAVAN',
-    'TORONTO': 'CATOR',
-    'MONTREAL': 'CAMTR',
-    'HALIFAX': 'CAHAL',
-    'VLADIVOSTOK': 'RUVVO',
-    'STPETERSBURG': 'RULED',
-    'MURMANSK': 'RUMMK',
-}
+    try:
+        # 判断是否为打包后的 EXE 环境
+        if getattr(sys, 'frozen', False):
+            # EXE 环境：使用 EXE 文件所在的目录
+            base_path = os.path.dirname(sys.executable)
+        else:
+            # 普通 Python 脚本运行：使用脚本文件所在的目录
+            base_path = os.path.dirname(__file__)
+        
+        json_file = os.path.join(base_path, 'port_codes.json')
+        
+        if not os.path.exists(json_file):
+            print(f"[警告] 港口代码文件不存在: {json_file}")
+            print("请确保 port_codes.json 文件存在于项目根目录。")
+            _PORT_CODES_CACHE = {}
+            return {}
+        
+        with open(json_file, 'r', encoding='utf-8') as f:
+            port_dict = json.load(f)
+        
+        print(f"[成功] 成功加载港口代码字典，共 {len(port_dict)} 个港口。")
+        _PORT_CODES_CACHE = port_dict
+        return port_dict
+        
+    except json.JSONDecodeError as e:
+        print(f"[错误] port_codes.json 文件格式错误: {e}")
+        _PORT_CODES_CACHE = {}
+        return {}
+    except Exception as e:
+        print(f"[错误] 加载港口代码文件失败: {e}")
+        _PORT_CODES_CACHE = {}
+        return {}
 # ===========================================
 
 def get_port_code(port_name):
     """
-    功能：根据港口名称查找对应的 UN/LOCODE 代码（关键词扫描模式）
+    功能：根据港口名称查找对应的 UN/LOCODE 代码（严格匹配模式）
     
     参数：
-        port_name: 港口名称（可能是 "Shanghai" 或 "Shanghai, China"）
+        port_name: 港口名称（例如 "Shanghai" 或 "SHANGHAI"）
     
     返回：
         对应的 5 位代码，如果找不到则返回空字符串
     """
-    print(f"DEBUG: 正在查找港口: [{port_name}]")
-    
     # 1. 如果 port_name 为空，返回空字符串
     if not port_name:
         return ""
     
-    # 2. 将输入的 port_name 转换为全大写字符串
-    input_str = port_name.upper()
+    # 2. 加载港口代码字典
+    port_dict = load_port_codes()
     
-    # 3. 核心逻辑：遍历 PORT_CODES 字典的所有 Key
-    #    先将字典的 Key 按长度从长到短排序，优先匹配长关键词
-    #    防止误判（比如防止 "AN" 匹配到 "TIANJIN"）
-    sorted_keys = sorted(PORT_CODES.keys(), key=len, reverse=True)
+    # 3. 如果字典为空（文件加载失败），返回空字符串
+    if not port_dict:
+        return ""
     
-    # 4. 检查：如果 Key 存在于 input_str 中（子字符串匹配）
-    for key in sorted_keys:
-        if key in input_str:
-            print(f"DEBUG: >> 包含匹配成功! 关键词=[{key}] -> 代码=[{PORT_CODES[key]}]")
-            return PORT_CODES[key]
+    # 4. 标准化输入：去除首尾空格并转换为大写
+    normalized_name = str(port_name).strip().upper()
     
-    # 5. 如果循环结束还没匹配到，使用 difflib.get_close_matches 进行模糊匹配
-    #    cutoff 设为 0.7，匹配最接近的 Key
-    close_matches = difflib.get_close_matches(input_str, PORT_CODES.keys(), n=1, cutoff=0.7)
-    if close_matches:
-        print(f"DEBUG: >> 模糊匹配成功! 输入=[{input_str}] 接近=[{close_matches[0]}]")
-        return PORT_CODES[close_matches[0]]
+    # 5. 严格匹配：直接查表
+    code = port_dict.get(normalized_name, "")
     
-    # 6. 如果都没找到，返回空字符串
-    print(f"DEBUG: >> 查找失败，字典中无此港口: [{port_name}]")
-    return ""
+    if code:
+        print(f"DEBUG: 港口匹配成功: [{port_name}] -> [{code}]")
+    else:
+        print(f"DEBUG: 港口匹配失败: [{port_name}] (标准化后: [{normalized_name}])")
+    
+    return code
 
 def extract_invoice_data(pdf_path):
     """
