@@ -54,7 +54,7 @@ def load_port_codes():
             _PORT_CODES_CACHE = {}
             return {}
         
-        with open(json_file, 'r', encoding='utf-8') as f:
+        with open(json_file, 'r', encoding='utf-8-sig') as f:
             port_dict = json.load(f)
         
         print(f"[成功] 成功加载港口代码字典，共 {len(port_dict)} 个港口。")

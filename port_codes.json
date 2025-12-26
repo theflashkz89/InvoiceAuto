@@ -1,5 +1,5 @@
-{
-  "SHANGHAI": "CNSHG",
+﻿{
+  "SHANGHAI": "CNSHA",
   "NINGBO": "CNNGB",
   "SHENZHEN": "CNSZX",
   "GUANGZHOU": "CNCAN",
@@ -213,4 +213,3 @@
   "STPETERSBURG": "RULED",
   "MURMANSK": "RUMMK"
 }
-
