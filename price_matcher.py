@@ -606,7 +606,8 @@ class FreightMatcher:
             # 4. 日期有效期匹配：Effective Date <= ETD <= Expiry Date
             
             # 创建匹配条件
-            carrier_match = (self.price_list[carrier_col].astype(str).str.strip().str.upper() == carrier_normalized)
+            # 对费率表的 Carrier 也应用同样的标准化函数，确保双方一致
+            carrier_match = (self.price_list[carrier_col].apply(self._standardize_carrier_name) == carrier_normalized)
             pol_match = (self.price_list[pol_col].astype(str).str.strip().str.upper() == loading_port_code_normalized)
             pod_match = (self.price_list[pod_col].astype(str).str.contains(destination_code_normalized, case=False, na=False))
             

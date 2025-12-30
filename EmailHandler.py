@@ -5,6 +5,7 @@
 
 import os
 import re
+import html
 from imap_tools import MailBox, AND
 from PDFClassifier import classify_pdf_content
 
@@ -70,13 +71,36 @@ def download_and_process_attachments(username, password, save_root_dir):
                 
                 # 从邮件正文中提取 Booking No
                 booking_no = ""
+                # 预处理邮件正文：
+                # 1. 解码 HTML 实体（如 &nbsp; -> 空格）
+                email_body_cleaned = html.unescape(email_body)
+                # 2. 移除 Unicode 替换字符和其他不可见/特殊字符（如 U+FFFD）
+                #    这些字符可能出现在订舱号前面导致正则匹配失败
+                email_body_cleaned = re.sub(r'[\ufffd\u200b\u200c\u200d\ufeff]', '', email_body_cleaned)
+                # 3. 将各种 Unicode 空格字符统一替换为普通空格
+                email_body_cleaned = re.sub(r'[\xa0\u2002\u2003\u2009\u200a]', ' ', email_body_cleaned)
                 # 匹配 "ORDER nbr : xxx" 或 "Booking No : xxx" 或 "Order No : xxx"
-                # (?:...) 是非捕获组，兼容 nbr/No/Ref，忽略大小写
-                booking_pattern = r"(?:ORDER|Booking)\s*(?:nbr|No|Ref|#)?\s*[:\.]?\s*([A-Za-z0-9\-\/]+)"
-                booking_match = re.search(booking_pattern, email_body, re.IGNORECASE)
-                if booking_match:
-                    booking_no = booking_match.group(1)
-                    print(f"  提取到 Booking No: {booking_no}")
+                # 改进：1. 要求冒号/点/等号分隔符 2. 订舱号至少5个字符 3. 排除关键词本身
+                booking_patterns = [
+                    # 格式1: ORDER nbr : XXXX 或 Booking No : XXXX（有明确分隔符）
+                    r"(?:ORDER|Booking)\s*(?:nbr|No|Ref|#)\s*[:\.=]\s*([A-Za-z0-9\-\/]{5,})",
+                    # 格式2: ORDER : XXXX 或 Booking : XXXX（没有 nbr/No）
+                    r"(?:ORDER|Booking)\s*[:\.=]\s*([A-Za-z0-9\-\/]{5,})",
+                    # 格式3: ORDER nbr XXXX（有 nbr/No 但无冒号，订舱号必须以字母开头+数字）
+                    r"(?:ORDER|Booking)\s+(?:nbr|No|Ref|#)\s+([A-Z]{2,}[A-Z0-9\-]{4,})",
+                    # 格式4: ORDER XXXX（直接跟订舱号，无分隔符，订舱号必须以字母开头+数字）
+                    r"(?:ORDER|Booking)\s+([A-Z]{2,}[A-Z0-9\-]{4,})",
+                ]
+                
+                for pattern in booking_patterns:
+                    booking_match = re.search(pattern, email_body_cleaned, re.IGNORECASE)
+                    if booking_match:
+                        potential_booking_no = booking_match.group(1).strip().upper()
+                        # 排除关键词本身
+                        if potential_booking_no not in ['NBR', 'NO', 'REF', 'ORDER', 'BOOKING']:
+                            booking_no = potential_booking_no
+                            print(f"  提取到 Booking No: {booking_no}")
+                            break
                 
                 # 存储当前邮件的有效附件
                 valid_attachments = []
