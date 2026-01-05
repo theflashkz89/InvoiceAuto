@@ -107,7 +107,7 @@ def get_port_code(port_name):
 
 def extract_invoice_data(pdf_path):
     """
-    功能：调用 DeepSeek 提取 PDF 中的发票数据
+    功能：调用 DeepSeek 提取 PDF 中的发票数据（SRTS专用优化版本）
     """
     # 1. 判空检查
     if not pdf_path:
@@ -170,6 +170,127 @@ def extract_invoice_data(pdf_path):
     """
 
     print("正在调用 DeepSeek 进行智能提取...")
+    
+    url = "https://api.deepseek.com/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {API_KEY}"
+    }
+    
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": "你是一个精通物流单据的数据提取助手，只输出 JSON。"},
+            {"role": "user", "content": prompt + "\n\n【单据内容】:\n" + full_text}
+        ],
+        "temperature": 0.1
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        
+        if response.status_code == 200:
+            res_json = response.json()
+            content = res_json['choices'][0]['message']['content']
+            
+            # 清洗数据
+            content = content.replace("```json", "").replace("```", "").strip()
+            
+            # 解析 JSON
+            result_list = json.loads(content)
+            
+            # 兼容性处理
+            if isinstance(result_list, dict):
+                result_list = [result_list]
+            
+            # 硬编码注入 SupplierName='SRTS'（不浪费Token，确保100%准确）
+            for item in result_list:
+                item['SupplierName'] = 'SRTS'
+                
+            print(f"提取成功！共找到 {len(result_list)} 条费用记录。")
+            return result_list
+        else:
+            print(f"API调用失败: {response.text}")
+            return []
+            
+    except Exception as e:
+        print(f"发生代码错误: {e}")
+        return []
+
+
+def extract_invoice_data_generic(pdf_path):
+    """
+    功能：调用 DeepSeek 提取 PDF 中的发票数据（通用版本，适用于所有供应商）
+    与 extract_invoice_data() 的区别：
+    - 使用更通用的Prompt，不依赖SRTS特定格式
+    - 新增提取字段 SupplierName（供应商名称）
+    - 字段列表与原函数保持一致，确保输出格式统一
+    """
+    # 1. 判空检查
+    if not pdf_path:
+        print("错误：传入的PDF路径是空的")
+        return []
+
+    # 2. 读取PDF文字
+    print(f"正在读取PDF文件：{pdf_path}")
+    full_text = ""
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    full_text += text + "\n"
+    except Exception as e:
+        print(f"读取PDF失败: {e}")
+        return []
+
+    if not full_text:
+        print("警告：无法提取文本，可能是扫描图片PDF")
+        return []
+
+    # 3. 构造通用提示词（不依赖SRTS特定格式）
+    prompt = """
+    你是一个物流单据提取专家。请分析用户的 Invoice/Debit Note/Tax Receipt 等账单文本。
+    该账单可能包含多行费用明细。
+    
+    请输出一个 JSON 列表 (List of Objects)。
+    如果是单行费用，列表中只有一个对象；如果是多行费用，列表中有多个对象。
+    每个对象必须包含【表头信息】和【当前行的费用明细】。
+
+    请严格提取以下字段（Key必须完全一致，找不到填 null）：
+    
+    【表头通用信息】(每行都要带上):
+    - InvoiceNo: (提取发票编号。可能标记为 "INVOICE NO"、"Invoice Number"、"Invoice #" 等，提取完整的编号字符串)
+    - OriginalFileNo: (提取文件编号。可能标记为 "FILE NO."、"File Number"、"File #"、"Reference No" 等，提取完整的编号，包含所有字符和连字符)
+    - DATE: (提取发票日期。可能标记为 "DATE"、"Invoice Date"、"Date" 等，格式尽量统一为 YYYY/MM/DD 或 YYYY-MM-DD)
+    - Carrier: (提取承运人/船公司名称。可能标记为 "Carrier"、"Shipping Line"、"Vessel Operator" 等)
+    - loadingport: (提取装货港/起运港名称。可能标记为 "Loading port"、"Port of Loading"、"POL"、"Origin" 等)
+    - Destination: (提取目的港/卸货港名称。可能标记为 "Destination"、"Discharge port"、"Port of Discharge"、"POD"、"Final Destination" 等)
+    - Vessel_Voyage: (提取船名和航次。可能标记为 "Vessel"、"Vessel / Voyage"、"Vessel/Voyage"、"Ship Name"、"Voyage No" 等，提取完整内容包含船名和航次)
+    - ETD: (提取预计离港日期。可能标记为 "ETD"、"Estimated Time of Departure"、"Departure Date" 等，格式尽量统一为 YYYY/MM/DD 或 YYYY-MM-DD)
+    - ETADate: (提取预计到港日期。可能标记为 "ETA Date"、"Estimated Time of Arrival"、"Arrival Date"、"ETA" 等，格式尽量统一为 YYYY/MM/DD 或 YYYY-MM-DD)
+    - OBL: (提取海运提单号。可能标记为 "OBL"、"Ocean Bill of Lading"、"B/L No" 等)
+    - HBL: (提取货代提单号。可能标记为 "HBL"、"House Bill of Lading"、"House B/L" 等)
+    - Receipt: (提取收货地点。可能标记为 "Receipt"、"Place of Receipt"、"Receipt Place" 等)
+    - SupplierName: (提取发票的开票方/供应商名称。通常位于发票顶部的Logo旁边或下方，例如 "XXX Logistics Inc." 或 "ABC Shipping Co., Ltd"。
+      请只提取公司名称文本，去除 "From:", "Shipper:", "Vendor:" 等前缀标签。
+      如果找不到明确的公司名，尝试提取页眉最显著的公司文本。不要与收件人/客户名称混淆。)
+
+    【费用明细信息】(根据费用行提取):
+    - OCEANFREIGHT: (费用项目名称。可能标记为 "Description"、"Item"、"Charge Description"、"Service" 等列中的内容)
+    - XUSD: (提取数量。可能标记为 "Quantity"、"Qty"、"X USD" 前面的数字等，提取纯数字)
+    - USD: (提取该行的总金额。可能标记为 "Amount"、"Total"、"USD" 等列中的金额数值)
+    - Unit_Price: (提取单价。可能以 "单价/柜型" 格式出现，如 "2042.000/40' HQ" 中的 "2042.000"，或单独标记为 "Unit Price"、"Price per Unit" 等)
+    - Container_Type: (提取柜型。可能以 "单价/柜型" 格式出现，如 "2042.000/40' HQ" 中的 "40' HQ"，或单独标记为 "Container Type"、"Container Size" 等)
+
+    注意：
+    1. 即使只有一行数据，也必须返回列表格式 `[{...}]`。
+    2. 不要使用 Markdown 格式，直接返回 JSON 字符串。
+    3. InvoiceNo 是必填字段，请优先提取各种可能的发票编号标记。
+    4. SupplierName 是新增字段，请仔细识别发票开票方的公司名称，不要与收件人混淆。
+    """
+
+    print("正在调用 DeepSeek 进行智能提取（通用模式）...")
     
     url = "https://api.deepseek.com/chat/completions"
     headers = {
@@ -277,7 +398,10 @@ def prepare_excel_row(invoice_data, file_path, booking_no):
         clean(invoice_data.get("USD")),         # 22. Amount
         
         # --- 邮件提取 ---
-        booking_no                              # 23. Booking No (从邮件中提取)
+        booking_no,                             # 23. Booking No (从邮件中提取)
+        
+        # --- 供应商信息 ---
+        clean(invoice_data.get("SupplierName"))  # 24. Supplier Name (供应商名称)
     ]
     
     return row

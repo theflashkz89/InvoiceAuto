@@ -10,6 +10,27 @@ from imap_tools import MailBox, AND
 from PDFClassifier import classify_pdf_content
 
 
+def detect_supplier_type(subject, body):
+    """
+    检测邮件供应商类型
+    
+    参数:
+        subject (str|None): 邮件标题（可能为None）
+        body (str|None): 邮件正文（可能为None）
+        
+    返回:
+        str: "SRTS" 如果邮件主题或正文包含 "SRTS"（不区分大小写），否则返回 "OTHER"
+    """
+    # 确保 subject 和 body 都是字符串，处理 None 值
+    subject = str(subject) if subject is not None else ""
+    body = str(body) if body is not None else ""
+    
+    combined = (subject + " " + body).upper()
+    if "SRTS" in combined:
+        return "SRTS"
+    return "OTHER"
+
+
 def download_and_process_attachments(username, password, save_root_dir):
     """
     从 QQ 邮箱下载未读邮件的 PDF 附件，并根据内容分类处理
@@ -24,6 +45,7 @@ def download_and_process_attachments(username, password, save_root_dir):
             - "subject": 邮件标题
             - "body": 邮件正文
             - "booking_no": 提取到的订舱号（从邮件正文中提取）
+            - "supplier_type": 供应商类型（"SRTS" 或 "OTHER"）
             - "attachments": 这封邮件下的有效附件列表，每个附件包含：
                 - "type": 文件类型（"INVOICE"、"BL" 或 "UNKNOWN"）
                 - "path": 文件保存路径
@@ -166,14 +188,18 @@ def download_and_process_attachments(username, password, save_root_dir):
                 
                 # 如果当前邮件有有效附件，则添加到邮件列表
                 if valid_attachments:
+                    # 检测供应商类型
+                    supplier_type = detect_supplier_type(email_subject, email_body)
+                    
                     email_info = {
                         "subject": email_subject,
                         "body": email_body,
                         "booking_no": booking_no,
+                        "supplier_type": supplier_type,
                         "attachments": valid_attachments
                     }
                     email_list.append(email_info)
-                    print(f"  ✓ 邮件已添加到结果列表（包含 {len(valid_attachments)} 个有效附件）")
+                    print(f"  ✓ 邮件已添加到结果列表（包含 {len(valid_attachments)} 个有效附件，供应商类型: {supplier_type}）")
                 else:
                     print(f"  - 邮件无有效附件，已跳过")
             

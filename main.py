@@ -128,9 +128,14 @@ def main():
                 invoice_filename = os.path.basename(invoice_path)
                 print(f"\n  处理 Invoice: {invoice_filename}")
                 
-                # 提取数据
-                print("  正在调用 AI 提取发票数据...")
-                extracted_data = invoice_extractor.extract_invoice_data(invoice_path)
+                # 根据供应商类型选择提取函数
+                supplier_type = email_info.get('supplier_type', 'OTHER')
+                if supplier_type == 'SRTS':
+                    print("  正在调用 AI 提取发票数据（SRTS专用模式）...")
+                    extracted_data = invoice_extractor.extract_invoice_data(invoice_path)
+                else:
+                    print("  正在调用 AI 提取发票数据（通用模式）...")
+                    extracted_data = invoice_extractor.extract_invoice_data_generic(invoice_path)
                 
                 # 如果返回数据为空，跳过
                 if not extracted_data:
@@ -264,7 +269,8 @@ def main():
                 "NO", "File Name", "FILENO", "File No", "DATE", "Carrier", "Vessel/Voyage",
                 "Loading Port", "Loading Port Code", "Destination", "Destination Code",
                 "ETD", "ETA", "Receipt", "OBL", "HBL", "MBL",
-                "Item", "Quantity", "Unit Price", "Container Type", "Amount", "Booking No"
+                "Item", "Quantity", "Unit Price", "Container Type", "Amount", "Booking No",
+                "Supplier Name"
             ]
             
             # 使用 pandas 创建 DataFrame

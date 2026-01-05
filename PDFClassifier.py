@@ -4,6 +4,7 @@ PDF 文件分类器模块
 """
 
 import pdfplumber
+import os
 
 
 def classify_pdf_content(file_path):
@@ -15,10 +16,15 @@ def classify_pdf_content(file_path):
         
     返回:
         str: 文件类型标识
-            - "INVOICE": 发票文件（包含 "INVOICE"）
-            - "BL": 提单文件（包含 "BILL OF LADING" 或 "WAYBILL" 或 "PORT OF"）
+            - "INVOICE": 发票文件（包含 "INVOICE"、"DEBIT NOTE"、"TAX RECEIPT"、"PAYMENT REQUEST"、"CREDIT NOTE" 等）
+            - "BL": 提单文件（包含 "BILL OF LADING"、"WAYBILL"、"TELEX RELEASE"、"CARGO RECEIPT" 等，或文件名包含 HBL/MBL）
             - "IGNORE": 垃圾文件（包含 "BANK DETAILS"）
             - "UNKNOWN": 未知类型
+            
+    判定逻辑:
+        1. 优先检查文件名（HBL/MBL 且不含 INVOICE -> BL）
+        2. 冲突仲裁：同时包含发票和提单关键词时，通过金额特征词（TOTAL/AMOUNT 等）判断
+        3. 有金额特征词 -> 判定为发票；无金额特征词 -> 判定为提单
             
     异常:
         如果文件无法打开或读取，会返回 "UNKNOWN" 并打印错误信息
@@ -46,17 +52,43 @@ def classify_pdf_content(file_path):
         
         # 将文本转换为大写，便于不区分大小写的匹配
         text_upper = text_content.upper()
+        filename_upper = os.path.basename(file_path).upper()
         
         # 判断是否为垃圾文件：包含 "BANK DETAILS"（优先判断，防止误判为其他类型）
         if "BANK DETAILS" in text_upper:
             return "IGNORE"
         
-        # 判断是否为发票：只要包含 "INVOICE" 就判定为发票（放宽规则，去掉 AMOUNT 要求）
-        if "INVOICE" in text_upper:
-            return "INVOICE"
+        # 1. 定义关键词库
+        # 发票标题词
+        invoice_keywords = ["INVOICE", "DEBIT NOTE", "TAX RECEIPT", "PAYMENT REQUEST", "CREDIT NOTE"]
+        # 提单标题词 (注意：不要用 HBL 这种短词作为正文关键词，容易误判，要用全称)
+        bl_keywords = ["BILL OF LADING", "WAYBILL", "TELEX RELEASE", "CARGO RECEIPT"]
+        # 算钱特征词 (发票通常会有这些，提单通常没有)
+        money_keywords = ["TOTAL", "AMOUNT DUE", "GRAND TOTAL", "BALANCE", "SUBTOTAL"]
         
-        # 判断是否为提单：包含 "BILL OF LADING" 或 "WAYBILL" 或 "PORT OF"（增加关键词）
-        if "BILL OF LADING" in text_upper or "WAYBILL" in text_upper or "PORT OF" in text_upper:
+        # 2. 状态检测
+        is_invoice = any(kw in text_upper for kw in invoice_keywords)
+        is_bl = any(kw in text_upper for kw in bl_keywords)
+        has_money = any(kw in text_upper for kw in money_keywords)
+        
+        # 3. 优先基于文件名的强力辅助判决 (文件名往往最准)
+        if "HBL" in filename_upper and "INVOICE" not in filename_upper:
+            return "BL"
+        if "MBL" in filename_upper and "INVOICE" not in filename_upper:
+            return "BL"
+        
+        # 4. 冲突仲裁逻辑
+        if is_invoice and is_bl:
+            # 既像发票又像提单 (最常见情况：发票里写了 Bill of Lading No)
+            if has_money:
+                return "INVOICE"  # 有"TOTAL/AMOUNT" -> 认为是发票
+            else:
+                return "BL"       # 没谈钱 -> 认为是提单附件
+        
+        if is_invoice:
+            return "INVOICE"
+            
+        if is_bl:
             return "BL"
         
         # 如果都不匹配，返回未知类型
