@@ -155,11 +155,13 @@ def extract_invoice_data(pdf_path):
     - OBL: (提取 "OBL" 后的单号)
     - HBL: (提取 "HBL" 后的单号)
     - Receipt: (提取 "Receipt" 后的地点)
+    - DueDate: (提取 "Due Date"、"Payment Due Date"、"Due" 后的日期，格式 YYYY/MM/DD。如果找不到则填 null)
 
     【费用明细信息】(根据费用行提取):
     - OCEANFREIGHT: (费用项目名称，通常在 Description 列)
     - XUSD: (提取 "X USD" 前面的数量，纯数字)
     - USD: (提取该行的总金额)
+    - Currency: (提取币种，如 "USD"、"EUR"、"CNY" 等。如果找不到则填 "USD")
     - Unit_Price: (提取单价，如 "2042.000/40' HQ" 中的 "2042.000")
     - Container_Type: (提取柜型，如 "2042.000/40' HQ" 中的 "40' HQ")
 
@@ -203,9 +205,11 @@ def extract_invoice_data(pdf_path):
             if isinstance(result_list, dict):
                 result_list = [result_list]
             
-            # 硬编码注入 SupplierName='SRTS'（不浪费Token，确保100%准确）
+            # 硬编码注入 SupplierName='SRTS' 和 Currency='USD'（不浪费Token，确保100%准确）
+            # SRTS 发票固定为 USD 币种
             for item in result_list:
                 item['SupplierName'] = 'SRTS'
+                item['Currency'] = 'USD'
                 
             print(f"提取成功！共找到 {len(result_list)} 条费用记录。")
             return result_list
@@ -262,7 +266,7 @@ def extract_invoice_data_generic(pdf_path):
     【表头通用信息】(每行都要带上):
     - InvoiceNo: (提取发票编号。可能标记为 "INVOICE NO"、"Invoice Number"、"Invoice #" 等，提取完整的编号字符串)
     - OriginalFileNo: (提取文件编号。可能标记为 "FILE NO."、"File Number"、"File #"、"Reference No" 等，提取完整的编号，包含所有字符和连字符)
-    - DATE: (提取发票日期。可能标记为 "DATE"、"Invoice Date"、"Date" 等，格式尽量统一为 YYYY/MM/DD 或 YYYY-MM-DD)
+    - DATE: (提取发票日期。可能标记为 "DATE"、"Invoice Date"、"Date"、"Voucher Date"、"Document Date"、"Billing Date"、"Issue Date" 等。日期可能有多种格式如 "2025/12/30"、"30 Dec 2025"、"December 30, 2025" 等，请统一转换为 YYYY/MM/DD 格式输出)
     - Carrier: (提取承运人/船公司名称。可能标记为 "Carrier"、"Shipping Line"、"Vessel Operator" 等)
     - loadingport: (提取装货港/起运港名称。可能标记为 "Loading port"、"Port of Loading"、"POL"、"Origin" 等)
     - Destination: (提取目的港/卸货港名称。可能标记为 "Destination"、"Discharge port"、"Port of Discharge"、"POD"、"Final Destination" 等)
@@ -272,6 +276,7 @@ def extract_invoice_data_generic(pdf_path):
     - OBL: (提取海运提单号。可能标记为 "OBL"、"Ocean Bill of Lading"、"B/L No" 等)
     - HBL: (提取货代提单号。可能标记为 "HBL"、"House Bill of Lading"、"House B/L" 等)
     - Receipt: (提取收货地点。可能标记为 "Receipt"、"Place of Receipt"、"Receipt Place" 等)
+    - DueDate: (提取付款到期日。可能标记为 "Due Date"、"Payment Due Date"、"Due"、"Payment Terms"、"Invoice payable until" 等。日期可能有多种格式如 "2026/01/29"、"29 Jan 2026"、"January 29, 2026" 等，请统一转换为 YYYY/MM/DD 格式输出。如果找不到则填 null)
     - SupplierName: (提取发票的开票方/供应商名称。通常位于发票顶部的Logo旁边或下方，例如 "XXX Logistics Inc." 或 "ABC Shipping Co., Ltd"。
       请只提取公司名称文本，去除 "From:", "Shipper:", "Vendor:" 等前缀标签。
       如果找不到明确的公司名，尝试提取页眉最显著的公司文本。不要与收件人/客户名称混淆。)
@@ -279,7 +284,8 @@ def extract_invoice_data_generic(pdf_path):
     【费用明细信息】(根据费用行提取):
     - OCEANFREIGHT: (费用项目名称。可能标记为 "Description"、"Item"、"Charge Description"、"Service" 等列中的内容)
     - XUSD: (提取数量。可能标记为 "Quantity"、"Qty"、"X USD" 前面的数字等，提取纯数字)
-    - USD: (提取该行的总金额。可能标记为 "Amount"、"Total"、"USD" 等列中的金额数值)
+    - USD: (提取该行的总金额。可能标记为 "Amount"、"Total"、"USD"、"EUR" 等列中的金额数值)
+    - Currency: (提取币种。可能标记为 "Currency"、"Curr"，或从金额单位识别如 "USD"、"EUR"、"CNY"、"GBP" 等。如果找不到明确标记则根据金额符号判断：$ = USD，€ = EUR，¥ = CNY)
     - Unit_Price: (提取单价。可能以 "单价/柜型" 格式出现，如 "2042.000/40' HQ" 中的 "2042.000"，或单独标记为 "Unit Price"、"Price per Unit" 等)
     - Container_Type: (提取柜型。可能以 "单价/柜型" 格式出现，如 "2042.000/40' HQ" 中的 "40' HQ"，或单独标记为 "Container Type"、"Container Size" 等)
 
@@ -401,7 +407,13 @@ def prepare_excel_row(invoice_data, file_path, booking_no):
         booking_no,                             # 23. Booking No (从邮件中提取)
         
         # --- 供应商信息 ---
-        clean(invoice_data.get("SupplierName"))  # 24. Supplier Name (供应商名称)
+        clean(invoice_data.get("SupplierName")),  # 24. Supplier Name (供应商名称)
+        
+        # --- 付款信息 ---
+        clean(invoice_data.get("DueDate")),      # 25. Due Date (发票上的付款到期日)
+        
+        # --- 币种信息 ---
+        clean(invoice_data.get("Currency")) or "USD"  # 26. Currency (币种，默认 USD)
     ]
     
     return row

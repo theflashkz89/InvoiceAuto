@@ -270,11 +270,24 @@ def main():
                 "Loading Port", "Loading Port Code", "Destination", "Destination Code",
                 "ETD", "ETA", "Receipt", "OBL", "HBL", "MBL",
                 "Item", "Quantity", "Unit Price", "Container Type", "Amount", "Booking No",
-                "Supplier Name"
+                "Supplier Name", "Due Date", "Currency"
             ]
             
             # 使用 pandas 创建 DataFrame
             df = pd.DataFrame(all_excel_data, columns=headers)
+            
+            # 格式化日期字段，只保留日期部分，去除时间
+            date_columns = ['DATE', 'ETD', 'ETA']
+            for col in date_columns:
+                if col in df.columns:
+                    # 尝试转换为 datetime，然后格式化为字符串（只保留日期部分）
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
+                    # 只保留日期部分，去除时间
+                    df[col] = df[col].dt.normalize()
+                    # 格式化为 YYYY/MM/DD 字符串格式
+                    df[col] = df[col].dt.strftime('%Y/%m/%d')
+                    # 将无效日期（NaT）转换为空字符串
+                    df[col] = df[col].replace('NaT', '').replace('nan', '')
             
             # 保存到 Excel 文件
             info_excel_path = os.path.join(base_path, "info.xlsx")
