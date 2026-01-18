@@ -14,16 +14,11 @@ from tkinter import filedialog, scrolledtext, messagebox
 import traceback
 
 # 导入项目模块
-import importlib
 import invoice_extractor
 import EmailHandler
 import config_loader
-
-# 强制重新加载模块，确保使用最新代码
-importlib.reload(invoice_extractor)
 import client_check
 from price_matcher import FreightMatcher
-import report_generator
 
 # ================= 配置区域 =================
 # 从配置文件加载配置信息
@@ -205,7 +200,7 @@ def run_main_process(base_dir, log_output, booking_list_path=None, price_list_pa
         
         if not email_list:
             print("⚠ 警告：没有获取到任何邮件，程序结束。")
-            return base_path  # 即使没有邮件，也返回 base_path 以便记录输出目录
+            return
         
         print(f"✓ 成功获取 {len(email_list)} 封有效邮件\n")
         
@@ -232,14 +227,8 @@ def run_main_process(base_dir, log_output, booking_list_path=None, price_list_pa
                 invoice_filename = os.path.basename(invoice_path)
                 print(f"\n  处理 Invoice: {invoice_filename}")
                 
-                # 根据供应商类型选择提取函数
-                supplier_type = email_info.get('supplier_type', 'OTHER')
-                if supplier_type == 'SRTS':
-                    print("  正在调用 AI 提取发票数据（SRTS专用模式）...")
-                    extracted_data = invoice_extractor.extract_invoice_data(invoice_path)
-                else:
-                    print("  正在调用 AI 提取发票数据（通用模式）...")
-                    extracted_data = invoice_extractor.extract_invoice_data_generic(invoice_path)
+                print("  正在调用 AI 提取发票数据...")
+                extracted_data = invoice_extractor.extract_invoice_data(invoice_path)
                 
                 if not extracted_data:
                     print("  ⚠ 跳过：AI 提取失败或返回空数据")
@@ -356,28 +345,12 @@ def run_main_process(base_dir, log_output, booking_list_path=None, price_list_pa
                 "NO", "File Name", "FILENO", "File No", "DATE", "Carrier", "Vessel/Voyage",
                 "Loading Port", "Loading Port Code", "Destination", "Destination Code",
                 "ETD", "ETA", "Receipt", "OBL", "HBL", "MBL",
-                "Item", "Quantity", "Unit Price", "Container Type", "Amount", "Booking No",
-                "Supplier Name", "Due Date", "Currency"
+                "Item", "Quantity", "Unit Price", "Container Type", "Amount", "Booking No"
             ]
             
             df = pd.DataFrame(all_excel_data, columns=headers)
-            
-            # 格式化日期字段，只保留日期部分，去除时间
-            date_columns = ['DATE', 'ETD', 'ETA']
-            for col in date_columns:
-                if col in df.columns:
-                    # 尝试转换为 datetime，然后格式化为字符串（只保留日期部分）
-                    df[col] = pd.to_datetime(df[col], errors='coerce')
-                    # 只保留日期部分，去除时间
-                    df[col] = df[col].dt.normalize()
-                    # 格式化为 YYYY/MM/DD 字符串格式
-                    df[col] = df[col].dt.strftime('%Y/%m/%d')
-                    # 将无效日期（NaT）转换为空字符串
-                    df[col] = df[col].replace('NaT', '').replace('nan', '')
-            
             df.to_excel(info_excel_path, index=False, engine='openpyxl')
             print(f"✓ 已生成 info.xlsx: {info_excel_path}")
-            
         else:
             print("⚠ 警告：没有数据可写入 info.xlsx")
         
@@ -468,13 +441,9 @@ def run_main_process(base_dir, log_output, booking_list_path=None, price_list_pa
         print(f"成功提取数: {success_extract_count}")
         print(f"输出目录: {base_path}")
         
-        # 返回输出目录路径，供 GUI 记录使用
-        return base_path
-        
     except Exception as e:
         print(f"\n❌ 程序执行出错: {e}")
         traceback.print_exc()
-        return None
     finally:
         # 恢复标准输出
         sys.stdout = old_stdout
@@ -496,9 +465,6 @@ class InvoiceAutoGUI:
         
         # Price List 文件路径
         self.price_list_path = None
-        
-        # 最近一次输出目录（用于"生成报表"功能）
-        self.last_output_dir = None
         
         # 是否正在运行
         self.is_running = False
@@ -562,19 +528,14 @@ class InvoiceAutoGUI:
         # 分隔线
         tk.Frame(self.root, height=2, bg="gray").pack(fill=tk.X, padx=10, pady=5)
         
-        # 中部：按钮区域（开始处理和生成报表并排）
+        # 中部：开始处理按钮
         button_frame = tk.Frame(self.root, pady=20)
         button_frame.pack()
         
         self.start_btn = tk.Button(button_frame, text="开始处理", command=self.start_processing,
                                    font=("Microsoft YaHei", 16, "bold"), bg="#2196F3", fg="white",
                                    relief=tk.RAISED, cursor="hand2", padx=30, pady=10)
-        self.start_btn.pack(side=tk.LEFT, padx=10)
-        
-        self.generate_reports_btn = tk.Button(button_frame, text="生成报表", command=self.on_generate_reports_click,
-                                               font=("Microsoft YaHei", 16, "bold"), bg="#FF9800", fg="white",
-                                               relief=tk.RAISED, cursor="hand2", padx=30, pady=10)
-        self.generate_reports_btn.pack(side=tk.LEFT, padx=10)
+        self.start_btn.pack()
         
         # 分隔线
         tk.Frame(self.root, height=2, bg="gray").pack(fill=tk.X, padx=10, pady=5)
@@ -678,10 +639,7 @@ class InvoiceAutoGUI:
     def run_in_thread(self, log_redirector):
         """在线程中运行主处理函数"""
         try:
-            output_dir = run_main_process(self.save_dir, log_redirector, self.booking_list_path, self.price_list_path)
-            # 记录输出目录，供"生成报表"功能使用
-            if output_dir:
-                self.root.after(0, lambda: setattr(self, 'last_output_dir', output_dir))
+            run_main_process(self.save_dir, log_redirector, self.booking_list_path, self.price_list_path)
         finally:
             # 恢复按钮状态（需要在主线程中执行）
             self.root.after(0, self.reset_button)
@@ -690,66 +648,6 @@ class InvoiceAutoGUI:
         """重置按钮状态（在主线程中调用）"""
         self.start_btn.config(state=tk.NORMAL, text="开始处理")
         self.is_running = False
-    
-    def on_generate_reports_click(self):
-        """生成报表按钮点击事件"""
-        if self.is_running:
-            return
-        
-        # 1. 确定默认打开目录（优先使用最近输出目录）
-        initial_dir = self.last_output_dir if self.last_output_dir else self.save_dir
-        
-        # 2. 弹出文件选择对话框
-        info_path = filedialog.askopenfilename(
-            title="选择已 Review 的 info.xlsx 文件",
-            initialdir=initial_dir,  # 默认打开最近输出目录
-            filetypes=[("Excel 文件", "*.xlsx"), ("所有文件", "*.*")]
-        )
-        if not info_path:
-            return
-        
-        # 3. 清空日志并显示开始信息
-        self.log_text.delete(1.0, tk.END)
-        self.log_text.insert(tk.END, f"正在从 info.xlsx 生成报表...\n")
-        self.log_text.insert(tk.END, f"源文件: {info_path}\n\n")
-        self.log_text.update()
-        
-        # 4. 在独立线程中调用 report_generator.generate_all_reports(info_path)
-        # 创建日志重定向对象
-        log_redirector = TextRedirector(self.log_text)
-        
-        # 在独立线程中运行
-        thread = threading.Thread(target=self.run_generate_reports, args=(info_path, log_redirector), daemon=True)
-        thread.start()
-    
-    def run_generate_reports(self, info_path, log_redirector):
-        """在线程中运行报表生成"""
-        # 重定向 print 输出到 GUI 文本框
-        old_stdout = sys.stdout
-        sys.stdout = log_redirector
-        
-        try:
-            # 调用报表生成函数
-            result = report_generator.generate_all_reports(info_path)
-            
-            # 显示结果（需要在主线程中更新 UI）
-            if result['success']:
-                self.root.after(0, lambda: self.log_text.insert(tk.END, "\n✓ 报表生成成功！\n"))
-                self.root.after(0, lambda: self.log_text.insert(tk.END, f"输出目录: {result['output_dir']}\n"))
-                for f in result['files']:
-                    self.root.after(0, lambda file=f: self.log_text.insert(tk.END, f"  - {file}\n"))
-                # 更新最近输出目录
-                if result['output_dir']:
-                    self.root.after(0, lambda: setattr(self, 'last_output_dir', result['output_dir']))
-            else:
-                self.root.after(0, lambda: self.log_text.insert(tk.END, f"\n✗ 生成失败: {result['error']}\n"))
-        except Exception as e:
-            self.root.after(0, lambda: self.log_text.insert(tk.END, f"\n✗ 生成报表时发生异常: {str(e)}\n"))
-            import traceback
-            traceback.print_exc()
-        finally:
-            # 恢复标准输出
-            sys.stdout = old_stdout
 
 
 def main():
