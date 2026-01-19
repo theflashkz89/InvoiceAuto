@@ -540,9 +540,9 @@ def generate_xero_bill(info_path, output_path, due_days=None):
             # 供应商名称映射
             supplier_name = map_supplier_name(row.get('Supplier Name', ''))
             
-            # 构建 InvoiceNumber: {FILENO}/{OBL}/{HBL}（跳过空值）
-            # 容错处理：支持多种列名变体（优先使用 FILENO，如果不存在则使用 File No）
-            fileno = safe_str(row.get('FILENO', row.get('File No', '')))
+            # 构建 InvoiceNumber: {File No}/{OBL}/{HBL}（跳过空值）
+            # 使用 File No 列（OriginalFileNo 文件编号）
+            fileno = safe_str(row.get('File No', ''))
             obl = safe_str(row.get('OBL', ''))
             hbl = safe_str(row.get('HBL', ''))
             invoice_number = safe_join([fileno, obl, hbl], '/')
