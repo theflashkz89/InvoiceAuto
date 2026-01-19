@@ -345,10 +345,21 @@ def run_main_process(base_dir, log_output, booking_list_path=None, price_list_pa
                 "NO", "File Name", "FILENO", "File No", "DATE", "Carrier", "Vessel/Voyage",
                 "Loading Port", "Loading Port Code", "Destination", "Destination Code",
                 "ETD", "ETA", "Receipt", "OBL", "HBL", "MBL",
-                "Item", "Quantity", "Unit Price", "Container Type", "Amount", "Booking No"
+                "Item", "Quantity", "Unit Price", "Container Type", "Amount", "Booking No",
+                "Supplier Name", "Due Date", "Currency"
             ]
             
             df = pd.DataFrame(all_excel_data, columns=headers)
+            
+            # 格式化日期字段，只保留日期部分，去除时间
+            date_columns = ['DATE', 'ETD', 'ETA']
+            for col in date_columns:
+                if col in df.columns:
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
+                    df[col] = df[col].dt.normalize()
+                    df[col] = df[col].dt.strftime('%Y/%m/%d')
+                    df[col] = df[col].replace('NaT', '').replace('nan', '')
+            
             df.to_excel(info_excel_path, index=False, engine='openpyxl')
             print(f"✓ 已生成 info.xlsx: {info_excel_path}")
         else:
