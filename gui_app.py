@@ -236,19 +236,25 @@ def run_main_process(base_dir, log_output, booking_list_path=None, price_list_pa
                 
                 first_data = extracted_data[0]
                 
-                invoice_no = first_data.get('InvoiceNo', '').strip() if first_data.get('InvoiceNo') else ''
+                # 优先使用 OriginalFileNo（文件编号），如果为空则使用 InvoiceNo（发票编号）作为兜底
+                invoice_no = first_data.get('OriginalFileNo', '').strip() if first_data.get('OriginalFileNo') else ''
                 if not invoice_no:
-                    invoice_no = first_data.get('OriginalFileNo', '').strip() if first_data.get('OriginalFileNo') else ''
+                    invoice_no = first_data.get('InvoiceNo', '').strip() if first_data.get('InvoiceNo') else ''
                 hbl = first_data.get('HBL', '').strip() if first_data.get('HBL') else ''
                 
-                print(f"  提取到 InvoiceNo: {invoice_no}")
+                print(f"  提取到文件编号: {invoice_no}")
                 print(f"  提取到 HBL: {hbl}")
+                print(f"  发票包含 {len(extracted_data)} 行费用明细")
                 
+                # 遍历所有费用行，为每行生成一条 Excel 数据
                 booking_no = email_info.get('booking_no', '')
-                excel_row = invoice_extractor.prepare_excel_row(first_data, invoice_filename, booking_no)
-                all_excel_data.append(excel_row)
-                success_extract_count += 1
-                print(f"  ✓ 已添加到 Excel 数据列表")
+                for row_idx, row_data in enumerate(extracted_data, 1):
+                    excel_row = invoice_extractor.prepare_excel_row(row_data, invoice_filename, booking_no)
+                    all_excel_data.append(excel_row)
+                    print(f"  ✓ 已添加第 {row_idx}/{len(extracted_data)} 行费用数据到 Excel 列表")
+                
+                success_extract_count += len(extracted_data)
+                print(f"  ✓ 共添加 {len(extracted_data)} 条记录到 Excel 数据列表")
                 
                 # ========== 重命名与归档 ==========
                 print("\n  【文件移动和重命名】")
