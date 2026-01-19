@@ -80,6 +80,13 @@ def classify_pdf_content(file_path):
         # 4. 冲突仲裁逻辑
         if is_invoice and is_bl:
             # 既像发票又像提单 (最常见情况：发票里写了 Bill of Lading No)
+            # 新增：检查 "BILL OF LADING" 是否作为文档标题出现（在前 500 字符内）
+            # 如果是，说明这是一个真正的提单文件，而不是发票中引用了提单号
+            first_500_chars = text_upper[:500]
+            if "BILL OF LADING" in first_500_chars:
+                print(f"[DEBUG分类]: 检测到 BILL OF LADING 在文件开头，判定为 BL")
+                return "BL"  # 标题是 Bill of Lading -> 认为是提单
+            
             if has_money:
                 return "INVOICE"  # 有"TOTAL/AMOUNT" -> 认为是发票
             else:
